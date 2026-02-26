@@ -117,20 +117,19 @@ export class PostService {
       ];
     }
 
+    // 构建 Tag 关联查询：按标签筛选时添加 where 条件
+    // 注意：不能 push 两个相同 alias 的 include，否则 Sequelize 会报错
+    const tagInclude: any = { model: Tag, as: 'tags' };
+    if (params.tagId) {
+      tagInclude.where = { id: params.tagId };
+      tagInclude.through = { attributes: [] };
+    }
+
     const include: any[] = [
       { model: User, as: 'author', attributes: ['id', 'username', 'displayName', 'avatar'] },
       { model: Category, as: 'category' },
-      { model: Tag, as: 'tags' },
+      tagInclude,
     ];
-
-    if (params.tagId) {
-      include.push({
-        model: Tag,
-        as: 'tags',
-        where: { id: params.tagId },
-        through: { attributes: [] },
-      });
-    }
 
     const { count, rows } = await Post.findAndCountAll({
       where,

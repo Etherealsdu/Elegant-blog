@@ -70,10 +70,14 @@ export class CommentService {
     }
 
     const postId = comment.postId;
-    // Delete replies first
+    // 先统计该评论下的回复数量，用于正确递减 commentCount
+    const replyCount = await Comment.count({ where: { parentId: id } });
+    // 删除所有子回复
     await Comment.destroy({ where: { parentId: id } });
+    // 删除评论本身
     await comment.destroy();
-    await Post.decrement('commentCount', { where: { id: postId } });
+    // 递减文章评论数：本条评论 + 其所有子回复
+    await Post.decrement('commentCount', { by: 1 + replyCount, where: { id: postId } });
 
     return { message: 'Comment deleted successfully' };
   }
