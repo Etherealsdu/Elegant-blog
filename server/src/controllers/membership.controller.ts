@@ -128,6 +128,8 @@ async function generateWechatPayUrl(paymentId: string, plan: any): Promise<strin
 }
 
 async function generateAlipayUrl(paymentId: string, plan: any): Promise<string> {
-  // In production, use Alipay SDK to generate payment page URL
-  return `https://openapi.alipay.com/gateway.do?app_id=${config.payment.alipay}&biz_content=${paymentId}`;
+  // 生产环境应使用支付宝 SDK 生成支付页面 URL
+  // 注意：config.payment.alipay 是对象，需要取 .notifyUrl 等具体字段
+  const appId = process.env.ALIPAY_APP_ID || '';
+  return `https://openapi.alipay.com/gateway.do?app_id=${appId}&biz_content=${paymentId}`;
 }

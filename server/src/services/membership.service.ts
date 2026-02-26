@@ -50,14 +50,14 @@ export class MembershipService {
   static async subscribe(userId: string, planId: string, provider: PaymentProvider) {
     const plan = await this.getPlanById(planId);
 
-    // Create pending payment
+    // 创建待支付的支付记录，将 planId 存入 description 以便回调时关联
     const payment = await Payment.create({
       userId,
       amount: plan.price,
       currency: plan.currency,
       provider,
       status: PaymentStatus.PENDING,
-      description: `Subscription to ${plan.name}`,
+      description: `Subscription to ${plan.name} [planId:${planId}]`,
     });
 
     return {
@@ -76,21 +76,31 @@ export class MembershipService {
       throw new AppError('Payment already processed', 400);
     }
 
-    // Update payment status
+    // 更新支付状态为已完成
     await payment.update({
       status: PaymentStatus.COMPLETED,
       providerPaymentId,
     });
 
-    // Find the plan - we need to find it by looking up the subscription or via the description
-    const plans = await MembershipPlan.findAll({ where: { isActive: true } });
-    const matchedPlan = plans.find((p) => payment.description.includes(p.name));
+    // 从 description 中提取 planId（格式: "... [planId:xxx]"）
+    // 这比通过 plan name 的字符串匹配更可靠
+    let matchedPlan = null;
+    const planIdMatch = payment.description.match(/\[planId:([^\]]+)\]/);
+    if (planIdMatch) {
+      matchedPlan = await MembershipPlan.findByPk(planIdMatch[1]);
+    }
+
+    // 兜底：如果提取 planId 失败，回退到按名称匹配
+    if (!matchedPlan) {
+      const plans = await MembershipPlan.findAll({ where: { isActive: true } });
+      matchedPlan = plans.find((p) => payment.description.includes(p.name)) || null;
+    }
 
     if (!matchedPlan) {
       throw new AppError('Associated plan not found', 404);
     }
 
-    // Create subscription
+    // 创建订阅记录
     const startDate = new Date();
     const endDate = new Date();
     endDate.setDate(endDate.getDate() + matchedPlan.durationDays);
@@ -103,7 +113,7 @@ export class MembershipService {
       endDate,
     });
 
-    // Link payment to subscription
+    // 将支付记录与订阅关联
     await payment.update({ subscriptionId: subscription.id });
 
     return { subscription, payment };

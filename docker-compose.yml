@@ -1,18 +1,42 @@
+# ============================================
+# Elegant Blog - Docker Compose 编排配置
+# ============================================
+#
+# 包含 4 个服务：
+#   1. postgres  - PostgreSQL 16 数据库
+#   2. redis     - Redis 7 缓存
+#   3. server    - Node.js/Express 后端 API
+#   4. client    - Nginx + React 前端
+#
+# 快速启动：
+#   cp .env.example .env   # 创建环境变量文件并修改配置
+#   docker-compose up -d --build
+#
+# 查看状态：
+#   docker-compose ps
+#   docker-compose logs -f
+#
+# 数据持久化：
+#   所有数据通过 Docker volumes 持久化，容器重建不会丢失数据。
+#   执行 docker-compose down -v 会删除所有数据（谨慎操作）。
+# ============================================
+
 version: '3.8'
 
 services:
-  # PostgreSQL Database
+  # ===== PostgreSQL 数据库 =====
+  # 主数据库，存储用户、文章、评论、订阅等所有业务数据
   postgres:
     image: postgres:16-alpine
     container_name: elegant-blog-db
     environment:
-      POSTGRES_DB: elegant_blog
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres123}
+      POSTGRES_DB: elegant_blog                     # 数据库名
+      POSTGRES_USER: postgres                       # 数据库用户名
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres123} # 数据库密码（生产环境务必修改！）
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data      # 数据持久化
     ports:
-      - "5432:5432"
+      - "5432:5432"                                 # 仅开发/调试需要暴露端口，生产环境可移除
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
@@ -20,14 +44,15 @@ services:
       timeout: 5s
       retries: 5
 
-  # Redis Cache
+  # ===== Redis 缓存 =====
+  # 用于会话缓存和速率限制（后续可扩展为文章缓存）
   redis:
     image: redis:7-alpine
     container_name: elegant-blog-redis
     ports:
-      - "6379:6379"
+      - "6379:6379"                                 # 仅开发/调试需要暴露端口
     volumes:
-      - redis_data:/data
+      - redis_data:/data                            # Redis 持久化数据
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -35,7 +60,8 @@ services:
       timeout: 5s
       retries: 5
 
-  # Backend API Server
+  # ===== 后端 API 服务 =====
+  # Node.js/Express 应用，提供 RESTful API
   server:
     build:
       context: .
@@ -46,37 +72,40 @@ services:
       PORT: 5000
       DATABASE_URL: postgresql://postgres:${DB_PASSWORD:-postgres123}@postgres:5432/elegant_blog
       REDIS_URL: redis://redis:6379
-      JWT_SECRET: ${JWT_SECRET:-your-production-jwt-secret}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-your-production-refresh-secret}
+      JWT_SECRET: ${JWT_SECRET:-your-production-jwt-secret}             # 生产环境必须修改！
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-your-production-refresh-secret}  # 生产环境必须修改！
       CLIENT_URL: ${CLIENT_URL:-http://localhost}
-      # Add other env vars as needed
+      # 其他环境变量按需添加（OAuth、支付等）
     volumes:
-      - uploads_data:/app/server/uploads
-      - logs_data:/app/server/logs
+      - uploads_data:/app/server/uploads            # 用户上传文件持久化
+      - logs_data:/app/server/logs                  # 应用日志持久化
     ports:
       - "5000:5000"
     depends_on:
       postgres:
-        condition: service_healthy
+        condition: service_healthy                  # 等待数据库就绪后才启动
       redis:
-        condition: service_healthy
+        condition: service_healthy                  # 等待 Redis 就绪后才启动
     restart: unless-stopped
 
-  # Frontend (Nginx)
+  # ===== 前端（Nginx + React 静态文件）=====
+  # Nginx 同时承担反向代理和静态文件服务
   client:
     build:
       context: .
       dockerfile: Dockerfile.client
     container_name: elegant-blog-client
     ports:
-      - "80:80"
-      - "443:443"
+      - "80:80"                                     # HTTP
+      - "443:443"                                   # HTTPS（需配置 SSL 证书）
     depends_on:
       - server
     restart: unless-stopped
 
+# ===== 数据卷定义 =====
+# Docker 管理的命名卷，数据存储在宿主机的 /var/lib/docker/volumes/ 下
 volumes:
-  postgres_data:
-  redis_data:
-  uploads_data:
-  logs_data:
+  postgres_data:    # PostgreSQL 数据
+  redis_data:       # Redis 持久化数据
+  uploads_data:     # 用户上传的文件（图片等）
+  logs_data:        # 应用运行日志
